@@ -1,6 +1,8 @@
 from datetime import datetime
+from decimal import Decimal
 
 from app.repository.finance_repository import FinanceRepository
+from app.repository.user_repository import UserRepository
 
 
 class FinanceService:
@@ -16,54 +18,77 @@ class FinanceService:
     @classmethod
     async def set_budget(
         cls,
+        username: str,
         month: str,
-        budget,
-    ):
+        budget: Decimal,
+    ) -> dict:
 
-        month = cls.normalize_month(month)
+        user_id = await UserRepository.get_or_create_user(
+            username,
+        )
+
+        month_date = cls.normalize_month(month)
 
         await FinanceRepository.upsert_budget(
-            month,
+            user_id,
+            month_date,
             budget,
         )
 
         return {
             "status": "ok",
-            "month": str(month),
+            "month": str(month_date),
             "budget": float(budget),
         }
 
     @classmethod
     async def set_credit(
         cls,
-        month,
-        credit,
-    ):
+        username: str,
+        month: str,
+        credit: Decimal,
+    ) -> dict:
 
-        month = cls.normalize_month(month)
+        user_id = await UserRepository.get_or_create_user(
+            username,
+        )
+
+        month_date = cls.normalize_month(month)
 
         await FinanceRepository.upsert_credit(
-            month,
+            user_id,
+            month_date,
             credit,
         )
 
         return {
             "status": "ok",
-            "month": str(month),
+            "month": str(month_date),
             "credit": float(credit),
         }
 
     @classmethod
-    async def get_month(cls, month):
+    async def get_month(
+        cls,
+        username: str,
+        month: str,
+    ) -> dict:
 
-        month = cls.normalize_month(month)
+        user_id = await UserRepository.get_or_create_user(
+            username,
+        )
 
-        row = await FinanceRepository.get_month(month)
+        month_date = cls.normalize_month(month)
+
+        row = await FinanceRepository.get_month(
+            user_id,
+            month_date,
+        )
 
         if row is None:
 
             return {
-                "month": str(month),
+                "month": str(month_date),
                 "budget": 0,
                 "credit": 0,
             }

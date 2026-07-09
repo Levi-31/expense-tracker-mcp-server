@@ -7,11 +7,41 @@ async def init_db():
 
         async with conn.cursor() as cur:
 
+            # -------------------------------------------------
+            # Users table
+            # -------------------------------------------------
+
+            await cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users(
+
+                    id UUID PRIMARY KEY
+                        DEFAULT gen_random_uuid(),
+
+                    username TEXT UNIQUE NOT NULL,
+
+                    full_name TEXT DEFAULT '',
+
+                    created_at TIMESTAMPTZ
+                        DEFAULT NOW()
+
+                );
+                """
+            )
+
+            # -------------------------------------------------
+            # Expenses table
+            # -------------------------------------------------
+
             await cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS expenses(
 
                     id SERIAL PRIMARY KEY,
+
+                    user_id UUID NOT NULL
+                        REFERENCES users(id)
+                        ON DELETE CASCADE,
 
                     date DATE NOT NULL,
 
@@ -27,33 +57,67 @@ async def init_db():
                 """
             )
 
+            # -------------------------------------------------
+            # Expense indexes
+            # -------------------------------------------------
+
             await cur.execute(
                 """
                 CREATE INDEX IF NOT EXISTS
-                idx_expense_date
-                ON expenses(date);
+                idx_expense_user
+                ON expenses(user_id);
                 """
             )
 
             await cur.execute(
                 """
                 CREATE INDEX IF NOT EXISTS
-                idx_expense_category
-                ON expenses(category);
+                idx_expense_user_date
+                ON expenses(user_id, date);
                 """
             )
+
+            await cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS
+                idx_expense_user_category
+                ON expenses(user_id, category);
+                """
+            )
+
+            # -------------------------------------------------
+            # Monthly finance table
+            # -------------------------------------------------
 
             await cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS monthly_finance(
 
-                    month DATE PRIMARY KEY,
+                    user_id UUID NOT NULL
+                        REFERENCES users(id)
+                        ON DELETE CASCADE,
+
+                    month DATE NOT NULL,
 
                     budget NUMERIC(12,2) DEFAULT 0,
 
-                    credit NUMERIC(12,2) DEFAULT 0
+                    credit NUMERIC(12,2) DEFAULT 0,
+
+                    PRIMARY KEY (user_id, month)
 
                 );
+                """
+            )
+
+            # -------------------------------------------------
+            # Monthly finance index
+            # -------------------------------------------------
+
+            await cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS
+                idx_finance_user_month
+                ON monthly_finance(user_id, month);
                 """
             )
 

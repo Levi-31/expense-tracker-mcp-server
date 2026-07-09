@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+from uuid import UUID
 
 from app.databases import get_connection
 
@@ -8,9 +9,10 @@ class FinanceRepository:
 
     @staticmethod
     async def upsert_budget(
+        user_id: UUID,
         month: date,
         budget: Decimal,
-    ):
+    ) -> None:
 
         async with get_connection() as conn:
 
@@ -20,20 +22,23 @@ class FinanceRepository:
                     """
                     INSERT INTO monthly_finance
                     (
+                        user_id,
                         month,
                         budget
                     )
                     VALUES
                     (
                         %s,
+                        %s,
                         %s
                     )
-                    ON CONFLICT(month)
+                    ON CONFLICT (user_id, month)
                     DO UPDATE
                     SET
-                        budget=EXCLUDED.budget
+                        budget = EXCLUDED.budget
                     """,
                     (
+                        user_id,
                         month,
                         budget,
                     ),
@@ -43,9 +48,10 @@ class FinanceRepository:
 
     @staticmethod
     async def upsert_credit(
-        month,
-        credit,
-    ):
+        user_id: UUID,
+        month: date,
+        credit: Decimal,
+    ) -> None:
 
         async with get_connection() as conn:
 
@@ -55,20 +61,23 @@ class FinanceRepository:
                     """
                     INSERT INTO monthly_finance
                     (
+                        user_id,
                         month,
                         credit
                     )
                     VALUES
                     (
                         %s,
+                        %s,
                         %s
                     )
-                    ON CONFLICT(month)
+                    ON CONFLICT (user_id, month)
                     DO UPDATE
                     SET
-                        credit=EXCLUDED.credit
+                        credit = EXCLUDED.credit
                     """,
                     (
+                        user_id,
                         month,
                         credit,
                     ),
@@ -78,8 +87,9 @@ class FinanceRepository:
 
     @staticmethod
     async def get_month(
-        month,
-    ):
+        user_id: UUID,
+        month: date,
+    ) -> dict | None:
 
         async with get_connection() as conn:
 
@@ -92,9 +102,11 @@ class FinanceRepository:
                         budget,
                         credit
                     FROM monthly_finance
-                    WHERE month=%s
+                    WHERE user_id = %s
+                      AND month = %s
                     """,
                     (
+                        user_id,
                         month,
                     ),
                 )
