@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from decimal import Decimal
 from datetime import date
 
-from fastmcp import FastMCP
+from fastmcp import FastMCP, Context
 
 from app.databases import open_pool, close_pool
 from app.schema import init_db
@@ -13,6 +13,7 @@ from app.models import ExpenseCreate
 from app.services.expense_service import ExpenseService
 from app.services.finance_service import FinanceService
 from app.services.summary_service import SummaryService
+from app.repository.user_repository import UserRepository
 
 
 # ---------------------------------------------------------
@@ -46,12 +47,10 @@ async def lifespan(app: FastMCP):
 mcp = FastMCP(
     "Expense Tracker",
     instructions=(
-        "Every tool requires an 'email' parameter. "
-        "Before calling any tool, you MUST know the user's email. "
-        "If the user has provided their email, use it directly. "
-        "If you cannot determine the email, "
-        "ask the user before proceeding. "
-        "Never guess or fabricate an email address."
+        "You must first ask the user to log in if they haven't done so in this session. "
+        "Use the login(email) tool to authenticate the user and save their session. "
+        "Once logged in, you do not need to provide the 'email' parameter for subsequent tool calls. "
+        "If you get an 'unauthenticated' status code, prompt the user to log in."
     ),
     lifespan=lifespan,
 )
@@ -71,22 +70,85 @@ async def categories():
 
 
 # ---------------------------------------------------------
+# Authentication Tools
+# ---------------------------------------------------------
+
+@mcp.tool()
+async def login(
+    email: str,
+    ctx: Context,
+) -> dict:
+    """
+    Log in a user by their email. Automatically creates the user if they don't exist.
+    Stores the user session state in the active MCP connection.
+    """
+    normalized_email = email.strip().lower()
+    await UserRepository.get_or_create_user(normalized_email)
+    await ctx.set_state("email", normalized_email)
+    return {
+        "status": "ok",
+        "message": f"Successfully logged in as {normalized_email}",
+        "email": normalized_email,
+    }
+
+
+@mcp.tool()
+async def logout(
+    ctx: Context,
+) -> dict:
+    """
+    Logs out the current user session and clears the session state.
+    """
+    await ctx.delete_state("email")
+    return {
+        "status": "ok",
+        "message": "Successfully logged out.",
+    }
+
+
+@mcp.tool()
+async def get_current_user(
+    ctx: Context,
+) -> dict:
+    """
+    Returns the currently logged-in user email in this session.
+    """
+    email = await ctx.get_state("email")
+    if not email:
+        return {
+            "status": "unauthenticated",
+            "message": "No active session. Please login first.",
+        }
+    return {
+        "status": "ok",
+        "email": email,
+    }
+
+
+# ---------------------------------------------------------
 # Expense Tools
 # ---------------------------------------------------------
 
 @mcp.tool()
 async def add_expense(
-    email: str,
+    ctx: Context,
     date: str,
     amount: float,
     category: str,
     subcategory: str = "",
     note: str = "",
     is_borrowed: bool = False,
+    email: str | None = None,
 ):
     """
-    Add a new expense for a user.
+    Add a new expense. Resolves the user from session or takes optional email.
     """
+    active_email = email or await ctx.get_state("email")
+    if not active_email:
+        return {
+            "status": "unauthenticated",
+            "message": "No active session. Please login first using login(email='user@example.com').",
+        }
 
     expense = ExpenseCreate(
         date=date,
@@ -98,23 +160,30 @@ async def add_expense(
     )
 
     return await ExpenseService.add_expense(
-        email,
+        active_email,
         expense,
     )
 
 
 @mcp.tool()
 async def list_expenses(
-    email: str,
+    ctx: Context,
     start_date: date,
     end_date: date,
+    email: str | None = None,
 ):
     """
-    List expenses within a date range for a user.
+    List expenses within a date range. Resolves user from session or takes optional email.
     """
+    active_email = email or await ctx.get_state("email")
+    if not active_email:
+        return {
+            "status": "unauthenticated",
+            "message": "No active session. Please login first using login(email='user@example.com').",
+        }
 
     return await ExpenseService.list_expenses(
-        email,
+        active_email,
         start_date,
         end_date,
     )
@@ -122,7 +191,7 @@ async def list_expenses(
 
 @mcp.tool()
 async def update_expense(
-    email: str,
+    ctx: Context,
     expense_id: int,
     date: str,
     amount: float,
@@ -130,10 +199,17 @@ async def update_expense(
     subcategory: str = "",
     note: str = "",
     is_borrowed: bool = False,
+    email: str | None = None,
 ):
     """
-    Update an existing expense for a user.
+    Update an existing expense. Resolves user from session or takes optional email.
     """
+    active_email = email or await ctx.get_state("email")
+    if not active_email:
+        return {
+            "status": "unauthenticated",
+            "message": "No active session. Please login first using login(email='user@example.com').",
+        }
 
     expense = ExpenseCreate(
         date=date,
@@ -145,7 +221,7 @@ async def update_expense(
     )
 
     return await ExpenseService.update_expense(
-        email,
+        active_email,
         expense_id,
         expense,
     )
@@ -153,30 +229,44 @@ async def update_expense(
 
 @mcp.tool()
 async def delete_expense(
-    email: str,
+    ctx: Context,
     expense_id: int,
+    email: str | None = None,
 ):
     """
-    Delete an expense for a user.
+    Delete an expense. Resolves user from session or takes optional email.
     """
+    active_email = email or await ctx.get_state("email")
+    if not active_email:
+        return {
+            "status": "unauthenticated",
+            "message": "No active session. Please login first using login(email='user@example.com').",
+        }
 
     return await ExpenseService.delete_expense(
-        email,
+        active_email,
         expense_id,
     )
 
 
 @mcp.tool()
 async def recent_expenses(
-    email: str,
+    ctx: Context,
     limit: int = 10,
+    email: str | None = None,
 ):
     """
-    Return latest expenses for a user.
+    Return latest expenses. Resolves user from session or takes optional email.
     """
+    active_email = email or await ctx.get_state("email")
+    if not active_email:
+        return {
+            "status": "unauthenticated",
+            "message": "No active session. Please login first using login(email='user@example.com').",
+        }
 
     return await ExpenseService.recent(
-        email,
+        active_email,
         limit,
     )
 
@@ -187,16 +277,23 @@ async def recent_expenses(
 
 @mcp.tool()
 async def set_monthly_budget(
-    email: str,
+    ctx: Context,
     month: str,
     budget: float,
+    email: str | None = None,
 ):
     """
-    Set monthly budget for a user.
+    Set monthly budget. Resolves user from session or takes optional email.
     """
+    active_email = email or await ctx.get_state("email")
+    if not active_email:
+        return {
+            "status": "unauthenticated",
+            "message": "No active session. Please login first using login(email='user@example.com').",
+        }
 
     return await FinanceService.set_budget(
-        email,
+        active_email,
         month,
         Decimal(str(budget)),
     )
@@ -204,16 +301,23 @@ async def set_monthly_budget(
 
 @mcp.tool()
 async def set_monthly_credit(
-    email: str,
+    ctx: Context,
     month: str,
     credit: float,
+    email: str | None = None,
 ):
     """
-    Set monthly credit for a user.
+    Set monthly credit. Resolves user from session or takes optional email.
     """
+    active_email = email or await ctx.get_state("email")
+    if not active_email:
+        return {
+            "status": "unauthenticated",
+            "message": "No active session. Please login first using login(email='user@example.com').",
+        }
 
     return await FinanceService.set_credit(
-        email,
+        active_email,
         month,
         Decimal(str(credit)),
     )
@@ -221,15 +325,22 @@ async def set_monthly_credit(
 
 @mcp.tool()
 async def get_monthly_finance(
-    email: str,
+    ctx: Context,
     month: str,
+    email: str | None = None,
 ):
     """
-    Get configured budget & credit for a user.
+    Get configured budget & credit. Resolves user from session or takes optional email.
     """
+    active_email = email or await ctx.get_state("email")
+    if not active_email:
+        return {
+            "status": "unauthenticated",
+            "message": "No active session. Please login first using login(email='user@example.com').",
+        }
 
     return await FinanceService.get_month(
-        email,
+        active_email,
         month,
     )
 
@@ -240,17 +351,24 @@ async def get_monthly_finance(
 
 @mcp.tool()
 async def summarize(
-    email: str,
+    ctx: Context,
     start_date: date,
     end_date: date,
     category: str | None = None,
+    email: str | None = None,
 ):
     """
-    Dashboard summary for a user.
+    Dashboard summary. Resolves user from session or takes optional email.
     """
+    active_email = email or await ctx.get_state("email")
+    if not active_email:
+        return {
+            "status": "unauthenticated",
+            "message": "No active session. Please login first using login(email='user@example.com').",
+        }
 
     return await SummaryService.summarize(
-        email,
+        active_email,
         start_date,
         end_date,
         category,
