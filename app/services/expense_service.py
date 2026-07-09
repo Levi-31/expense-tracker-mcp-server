@@ -3,6 +3,7 @@ from datetime import date
 from app.models import ExpenseCreate
 from app.repository.expense_repository import ExpenseRepository
 from app.repository.user_repository import UserRepository
+from app.resources import normalize_and_validate
 
 
 class ExpenseService:
@@ -13,6 +14,24 @@ class ExpenseService:
         data: ExpenseCreate,
     ) -> dict:
 
+        try:
+            category, subcategory = normalize_and_validate(
+                data.category,
+                data.subcategory,
+            )
+        except ValueError as e:
+            return {
+                "status": "error",
+                "message": str(e),
+            }
+
+        # Auto-detect is_borrowed
+        is_borrowed = data.is_borrowed
+        note_lower = data.note.lower()
+        if (category == "credit_card_usage" and subcategory == "borrowed_to_friend") or \
+           ("borrowed to a friend" in note_lower or "borrowed to friend" in note_lower or "lent to" in note_lower):
+            is_borrowed = True
+
         user_id = await UserRepository.get_or_create_user(
             email,
         )
@@ -21,9 +40,10 @@ class ExpenseService:
             user_id=user_id,
             expense_date=data.date,
             amount=data.amount,
-            category=data.category.strip(),
-            subcategory=data.subcategory.strip(),
+            category=category,
+            subcategory=subcategory,
             note=data.note.strip(),
+            is_borrowed=is_borrowed,
         )
 
         return {
@@ -87,18 +107,37 @@ class ExpenseService:
         data: ExpenseCreate,
     ) -> dict:
 
+        try:
+            category, subcategory = normalize_and_validate(
+                data.category,
+                data.subcategory,
+            )
+        except ValueError as e:
+            return {
+                "status": "error",
+                "message": str(e),
+            }
+
+        # Auto-detect is_borrowed
+        is_borrowed = data.is_borrowed
+        note_lower = data.note.lower()
+        if (category == "credit_card_usage" and subcategory == "borrowed_to_friend") or \
+           ("borrowed to a friend" in note_lower or "borrowed to friend" in note_lower or "lent to" in note_lower):
+            is_borrowed = True
+
         user_id = await UserRepository.get_or_create_user(
             email,
         )
 
         updated = await ExpenseRepository.update(
-            user_id,
-            expense_id,
-            data.date,
-            data.amount,
-            data.category,
-            data.subcategory,
-            data.note,
+            user_id=user_id,
+            expense_id=expense_id,
+            expense_date=data.date,
+            amount=data.amount,
+            category=category,
+            subcategory=subcategory,
+            note=data.note.strip(),
+            is_borrowed=is_borrowed,
         )
 
         if not updated:

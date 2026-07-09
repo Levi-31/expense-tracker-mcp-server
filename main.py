@@ -82,6 +82,7 @@ async def add_expense(
     category: str,
     subcategory: str = "",
     note: str = "",
+    is_borrowed: bool = False,
 ):
     """
     Add a new expense for a user.
@@ -93,6 +94,7 @@ async def add_expense(
         category=category,
         subcategory=subcategory,
         note=note,
+        is_borrowed=is_borrowed,
     )
 
     return await ExpenseService.add_expense(
@@ -127,6 +129,7 @@ async def update_expense(
     category: str,
     subcategory: str = "",
     note: str = "",
+    is_borrowed: bool = False,
 ):
     """
     Update an existing expense for a user.
@@ -138,6 +141,7 @@ async def update_expense(
         category=category,
         subcategory=subcategory,
         note=note,
+        is_borrowed=is_borrowed,
     )
 
     return await ExpenseService.update_expense(

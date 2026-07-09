@@ -27,6 +27,7 @@ class SummaryService:
             category_summary,
             summary,
             finance,
+            borrowed_data,
         ) = await asyncio.gather(
 
             ExpenseRepository.category_summary(
@@ -34,23 +35,33 @@ class SummaryService:
                 start_date,
                 end_date,
                 category,
+                exclude_borrowed=True,
             ),
 
             ExpenseRepository.summary_stats(
                 user_id,
                 start_date,
                 end_date,
+                exclude_borrowed=True,
             ),
 
             FinanceRepository.get_month(
                 user_id,
                 month,
             ),
+
+            ExpenseRepository.borrowed_summary(
+                user_id,
+                start_date,
+                end_date,
+            ),
         )
 
         total_expense = summary["total_expense"]
         transactions = summary["transactions"]
         average_transaction = summary["average_transaction"]
+
+        total_borrowed = borrowed_data["total_borrowed"] or Decimal("0")
 
         budget = Decimal("0")
         credit = Decimal("0")
@@ -92,13 +103,32 @@ class SummaryService:
             2,
         )
 
+        # Convert category_summary to list and append borrowed if exists
+        cat_summary_list = [
+            {
+                "category": row["category"],
+                "total_amount": float(
+                    row["total_amount"]
+                ),
+            }
+            for row in category_summary
+        ]
+
+        if total_borrowed > 0:
+            cat_summary_list.append({
+                "category": "borrowed",
+                "total_amount": float(total_borrowed),
+            })
+
+        # Sort descending
+        cat_summary_list.sort(key=lambda x: x["total_amount"], reverse=True)
+
         largest_category = None
         largest_amount = Decimal("0")
 
-        if category_summary:
-
-            largest_category = category_summary[0]["category"]
-            largest_amount = category_summary[0]["total_amount"]
+        if cat_summary_list:
+            largest_category = cat_summary_list[0]["category"]
+            largest_amount = Decimal(str(cat_summary_list[0]["total_amount"]))
 
         return {
 
@@ -111,6 +141,8 @@ class SummaryService:
             "credit": float(credit),
 
             "total_expense": float(total_expense),
+
+            "total_borrowed": float(total_borrowed),
 
             "remaining_budget": float(
                 remaining_budget
@@ -146,13 +178,5 @@ class SummaryService:
                 largest_amount
             ),
 
-            "category_summary": [
-                {
-                    "category": row["category"],
-                    "total_amount": float(
-                        row["total_amount"]
-                    ),
-                }
-                for row in category_summary
-            ],
+            "category_summary": cat_summary_list,
         }

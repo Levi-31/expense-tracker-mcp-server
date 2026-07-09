@@ -15,6 +15,7 @@ class ExpenseRepository:
         category: str,
         subcategory: str,
         note: str,
+        is_borrowed: bool = False,
     ) -> int:
 
         async with get_connection() as conn:
@@ -30,10 +31,12 @@ class ExpenseRepository:
                         amount,
                         category,
                         subcategory,
-                        note
+                        note,
+                        is_borrowed
                     )
                     VALUES
                     (
+                        %s,
                         %s,
                         %s,
                         %s,
@@ -50,6 +53,7 @@ class ExpenseRepository:
                         category,
                         subcategory,
                         note,
+                        is_borrowed,
                     ),
                 )
 
@@ -64,32 +68,34 @@ class ExpenseRepository:
         user_id: UUID,
         start_date: date,
         end_date: date,
+        exclude_borrowed: bool = False,
     ) -> list[dict]:
+
+        sql = """
+        SELECT
+            id,
+            date,
+            amount,
+            category,
+            subcategory,
+            note,
+            is_borrowed
+        FROM expenses
+        WHERE user_id = %s
+          AND date BETWEEN %s AND %s
+        """
+        params = [user_id, start_date, end_date]
+
+        if exclude_borrowed:
+            sql += " AND is_borrowed = FALSE"
+
+        sql += " ORDER BY date, id"
 
         async with get_connection() as conn:
 
             async with conn.cursor() as cur:
 
-                await cur.execute(
-                    """
-                    SELECT
-                        id,
-                        date,
-                        amount,
-                        category,
-                        subcategory,
-                        note
-                    FROM expenses
-                    WHERE user_id = %s
-                      AND date BETWEEN %s AND %s
-                    ORDER BY date, id
-                    """,
-                    (
-                        user_id,
-                        start_date,
-                        end_date,
-                    ),
-                )
+                await cur.execute(sql, params)
 
                 return await cur.fetchall()
 
@@ -98,26 +104,26 @@ class ExpenseRepository:
         user_id: UUID,
         start_date: date,
         end_date: date,
+        exclude_borrowed: bool = True,
     ) -> Decimal:
+
+        sql = """
+        SELECT
+        COALESCE(SUM(amount),0) AS total
+        FROM expenses
+        WHERE user_id = %s
+          AND date BETWEEN %s AND %s
+        """
+        params = [user_id, start_date, end_date]
+
+        if exclude_borrowed:
+            sql += " AND is_borrowed = FALSE"
 
         async with get_connection() as conn:
 
             async with conn.cursor() as cur:
 
-                await cur.execute(
-                    """
-                    SELECT
-                    COALESCE(SUM(amount),0) AS total
-                    FROM expenses
-                    WHERE user_id = %s
-                      AND date BETWEEN %s AND %s
-                    """,
-                    (
-                        user_id,
-                        start_date,
-                        end_date,
-                    ),
-                )
+                await cur.execute(sql, params)
 
                 row = await cur.fetchone()
 
@@ -129,6 +135,7 @@ class ExpenseRepository:
         start_date: date,
         end_date: date,
         category: str | None = None,
+        exclude_borrowed: bool = True,
     ) -> list[dict]:
         """
         Returns category-wise total expense for a user.
@@ -148,6 +155,9 @@ class ExpenseRepository:
             start_date,
             end_date,
         ]
+
+        if exclude_borrowed:
+            sql += " AND is_borrowed = FALSE"
 
         if category:
 
@@ -205,6 +215,7 @@ class ExpenseRepository:
         category: str,
         subcategory: str,
         note: str,
+        is_borrowed: bool = False,
     ) -> bool:
 
         async with get_connection() as conn:
@@ -219,7 +230,8 @@ class ExpenseRepository:
                         amount = %s,
                         category = %s,
                         subcategory = %s,
-                        note = %s
+                        note = %s,
+                        is_borrowed = %s
                     WHERE id = %s
                       AND user_id = %s
                     """,
@@ -229,6 +241,7 @@ class ExpenseRepository:
                         category,
                         subcategory,
                         note,
+                        is_borrowed,
                         expense_id,
                         user_id,
                     ),
@@ -244,33 +257,39 @@ class ExpenseRepository:
     async def recent(
         user_id: UUID,
         limit: int = 10,
+        exclude_borrowed: bool = False,
     ) -> list[dict]:
+
+        sql = """
+        SELECT
+            id,
+            date,
+            amount,
+            category,
+            subcategory,
+            note,
+            is_borrowed
+        FROM expenses
+        WHERE user_id = %s
+        """
+        params = [user_id]
+
+        if exclude_borrowed:
+            sql += " AND is_borrowed = FALSE"
+
+        sql += """
+        ORDER BY
+            date DESC,
+            id DESC
+        LIMIT %s
+        """
+        params.append(limit)
 
         async with get_connection() as conn:
 
             async with conn.cursor() as cur:
 
-                await cur.execute(
-                    """
-                    SELECT
-                        id,
-                        date,
-                        amount,
-                        category,
-                        subcategory,
-                        note
-                    FROM expenses
-                    WHERE user_id = %s
-                    ORDER BY
-                        date DESC,
-                        id DESC
-                    LIMIT %s
-                    """,
-                    (
-                        user_id,
-                        limit,
-                    ),
-                )
+                await cur.execute(sql, params)
 
                 return await cur.fetchall()
 
@@ -279,11 +298,50 @@ class ExpenseRepository:
         user_id: UUID,
         start_date: date,
         end_date: date,
+        exclude_borrowed: bool = True,
     ) -> dict:
         """
         Returns overall statistics in a single query.
         """
 
+        sql = """
+        SELECT
+
+            COUNT(*) AS transactions,
+
+            COALESCE(SUM(amount),0)
+                AS total_expense,
+
+            COALESCE(AVG(amount),0)
+                AS average_transaction
+
+        FROM expenses
+
+        WHERE user_id = %s
+          AND date BETWEEN %s AND %s
+        """
+        params = [user_id, start_date, end_date]
+
+        if exclude_borrowed:
+            sql += " AND is_borrowed = FALSE"
+
+        async with get_connection() as conn:
+
+            async with conn.cursor() as cur:
+
+                await cur.execute(sql, params)
+
+                return await cur.fetchone()
+
+    @staticmethod
+    async def borrowed_summary(
+        user_id: UUID,
+        start_date: date,
+        end_date: date,
+    ) -> dict:
+        """
+        Returns stats for borrowed expenses (amount lent to friends).
+        """
         async with get_connection() as conn:
 
             async with conn.cursor() as cur:
@@ -291,25 +349,14 @@ class ExpenseRepository:
                 await cur.execute(
                     """
                     SELECT
-
-                        COUNT(*) AS transactions,
-
-                        COALESCE(SUM(amount),0)
-                            AS total_expense,
-
-                        COALESCE(AVG(amount),0)
-                            AS average_transaction
-
+                        COALESCE(SUM(amount), 0) AS total_borrowed,
+                        COUNT(*) AS transactions
                     FROM expenses
-
                     WHERE user_id = %s
                       AND date BETWEEN %s AND %s
+                      AND is_borrowed = TRUE
                     """,
-                    (
-                        user_id,
-                        start_date,
-                        end_date,
-                    ),
+                    (user_id, start_date, end_date),
                 )
 
                 return await cur.fetchone()

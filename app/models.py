@@ -23,6 +23,9 @@ class ExpenseCreate(BaseModel):
 
     note: str = ""
 
+    is_borrowed: bool = False
+
+
 
 class MonthlyBudget(BaseModel):
 
