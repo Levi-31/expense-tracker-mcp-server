@@ -18,13 +18,13 @@ class FinanceService:
     @classmethod
     async def set_budget(
         cls,
-        username: str,
+        email: str,
         month: str,
         budget: Decimal,
     ) -> dict:
 
         user_id = await UserRepository.get_or_create_user(
-            username,
+            email,
         )
 
         month_date = cls.normalize_month(month)
@@ -44,13 +44,13 @@ class FinanceService:
     @classmethod
     async def set_credit(
         cls,
-        username: str,
+        email: str,
         month: str,
         credit: Decimal,
     ) -> dict:
 
         user_id = await UserRepository.get_or_create_user(
-            username,
+            email,
         )
 
         month_date = cls.normalize_month(month)
@@ -70,12 +70,12 @@ class FinanceService:
     @classmethod
     async def get_month(
         cls,
-        username: str,
+        email: str,
         month: str,
     ) -> dict:
 
         user_id = await UserRepository.get_or_create_user(
-            username,
+            email,
         )
 
         month_date = cls.normalize_month(month)

@@ -9,12 +9,12 @@ class ExpenseService:
 
     @staticmethod
     async def add_expense(
-        username: str,
+        email: str,
         data: ExpenseCreate,
     ) -> dict:
 
         user_id = await UserRepository.get_or_create_user(
-            username,
+            email,
         )
 
         expense_id = await ExpenseRepository.add(
@@ -33,13 +33,13 @@ class ExpenseService:
 
     @staticmethod
     async def list_expenses(
-        username: str,
+        email: str,
         start_date: date,
         end_date: date,
     ) -> dict:
 
         user_id = await UserRepository.get_or_create_user(
-            username,
+            email,
         )
 
         expenses = await ExpenseRepository.list_between(
@@ -56,12 +56,12 @@ class ExpenseService:
 
     @staticmethod
     async def delete_expense(
-        username: str,
+        email: str,
         expense_id: int,
     ) -> dict:
 
         user_id = await UserRepository.get_or_create_user(
-            username,
+            email,
         )
 
         deleted = await ExpenseRepository.delete(
@@ -82,13 +82,13 @@ class ExpenseService:
 
     @staticmethod
     async def update_expense(
-        username: str,
+        email: str,
         expense_id: int,
         data: ExpenseCreate,
     ) -> dict:
 
         user_id = await UserRepository.get_or_create_user(
-            username,
+            email,
         )
 
         updated = await ExpenseRepository.update(
@@ -115,12 +115,12 @@ class ExpenseService:
 
     @staticmethod
     async def recent(
-        username: str,
+        email: str,
         limit: int = 10,
     ) -> dict:
 
         user_id = await UserRepository.get_or_create_user(
-            username,
+            email,
         )
 
         expenses = await ExpenseRepository.recent(

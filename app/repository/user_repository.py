@@ -6,13 +6,24 @@ from app.databases import get_connection
 class UserRepository:
 
     @staticmethod
-    async def get_by_username(
-        username: str,
+    def _normalize(email: str) -> str:
+        """
+        Lowercase and strip whitespace so that
+        'User@Gmail.com' and 'user@gmail.com'
+        resolve to the same user.
+        """
+        return email.strip().lower()
+
+    @staticmethod
+    async def get_by_email(
+        email: str,
     ) -> dict | None:
         """
-        Fetch a user row by username.
+        Fetch a user row by email.
         Returns None if the user does not exist.
         """
+
+        email = UserRepository._normalize(email)
 
         async with get_connection() as conn:
 
@@ -22,26 +33,28 @@ class UserRepository:
                     """
                     SELECT
                         id,
-                        username,
+                        email,
                         full_name,
                         created_at
                     FROM users
-                    WHERE username = %s
+                    WHERE email = %s
                     """,
-                    (username,),
+                    (email,),
                 )
 
                 return await cur.fetchone()
 
     @staticmethod
     async def create_user(
-        username: str,
+        email: str,
         full_name: str = "",
     ) -> UUID:
         """
         Insert a new user and return the generated UUID.
-        Raises on duplicate username.
+        Raises on duplicate email.
         """
+
+        email = UserRepository._normalize(email)
 
         async with get_connection() as conn:
 
@@ -51,7 +64,7 @@ class UserRepository:
                     """
                     INSERT INTO users
                     (
-                        username,
+                        email,
                         full_name
                     )
                     VALUES
@@ -62,7 +75,7 @@ class UserRepository:
                     RETURNING id
                     """,
                     (
-                        username,
+                        email,
                         full_name,
                     ),
                 )
@@ -75,7 +88,7 @@ class UserRepository:
 
     @staticmethod
     async def get_or_create_user(
-        username: str,
+        email: str,
         full_name: str = "",
     ) -> UUID:
         """
@@ -86,6 +99,8 @@ class UserRepository:
         followed by a SELECT to handle race conditions.
         """
 
+        email = UserRepository._normalize(email)
+
         async with get_connection() as conn:
 
             async with conn.cursor() as cur:
@@ -94,7 +109,7 @@ class UserRepository:
                     """
                     INSERT INTO users
                     (
-                        username,
+                        email,
                         full_name
                     )
                     VALUES
@@ -102,11 +117,11 @@ class UserRepository:
                         %s,
                         %s
                     )
-                    ON CONFLICT (username)
+                    ON CONFLICT (email)
                     DO NOTHING
                     """,
                     (
-                        username,
+                        email,
                         full_name,
                     ),
                 )
@@ -115,9 +130,9 @@ class UserRepository:
                     """
                     SELECT id
                     FROM users
-                    WHERE username = %s
+                    WHERE email = %s
                     """,
-                    (username,),
+                    (email,),
                 )
 
                 row = await cur.fetchone()

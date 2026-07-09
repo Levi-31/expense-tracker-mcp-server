@@ -46,13 +46,12 @@ async def lifespan(app: FastMCP):
 mcp = FastMCP(
     "Expense Tracker",
     instructions=(
-        "Every tool requires a 'username' parameter. "
-        "Before calling any tool, you MUST identify the user. "
-        "Extract the username from the user's email "
-        "(the part before the @), or from their name if provided. "
-        "If you cannot determine the username, "
+        "Every tool requires an 'email' parameter. "
+        "Before calling any tool, you MUST know the user's email. "
+        "If the user has provided their email, use it directly. "
+        "If you cannot determine the email, "
         "ask the user before proceeding. "
-        "Never guess or fabricate a username."
+        "Never guess or fabricate an email address."
     ),
     lifespan=lifespan,
 )
@@ -77,7 +76,7 @@ async def categories():
 
 @mcp.tool()
 async def add_expense(
-    username: str,
+    email: str,
     date: str,
     amount: float,
     category: str,
@@ -97,14 +96,14 @@ async def add_expense(
     )
 
     return await ExpenseService.add_expense(
-        username,
+        email,
         expense,
     )
 
 
 @mcp.tool()
 async def list_expenses(
-    username: str,
+    email: str,
     start_date: date,
     end_date: date,
 ):
@@ -113,7 +112,7 @@ async def list_expenses(
     """
 
     return await ExpenseService.list_expenses(
-        username,
+        email,
         start_date,
         end_date,
     )
@@ -121,7 +120,7 @@ async def list_expenses(
 
 @mcp.tool()
 async def update_expense(
-    username: str,
+    email: str,
     expense_id: int,
     date: str,
     amount: float,
@@ -142,7 +141,7 @@ async def update_expense(
     )
 
     return await ExpenseService.update_expense(
-        username,
+        email,
         expense_id,
         expense,
     )
@@ -150,7 +149,7 @@ async def update_expense(
 
 @mcp.tool()
 async def delete_expense(
-    username: str,
+    email: str,
     expense_id: int,
 ):
     """
@@ -158,14 +157,14 @@ async def delete_expense(
     """
 
     return await ExpenseService.delete_expense(
-        username,
+        email,
         expense_id,
     )
 
 
 @mcp.tool()
 async def recent_expenses(
-    username: str,
+    email: str,
     limit: int = 10,
 ):
     """
@@ -173,7 +172,7 @@ async def recent_expenses(
     """
 
     return await ExpenseService.recent(
-        username,
+        email,
         limit,
     )
 
@@ -184,7 +183,7 @@ async def recent_expenses(
 
 @mcp.tool()
 async def set_monthly_budget(
-    username: str,
+    email: str,
     month: str,
     budget: float,
 ):
@@ -193,7 +192,7 @@ async def set_monthly_budget(
     """
 
     return await FinanceService.set_budget(
-        username,
+        email,
         month,
         Decimal(str(budget)),
     )
@@ -201,7 +200,7 @@ async def set_monthly_budget(
 
 @mcp.tool()
 async def set_monthly_credit(
-    username: str,
+    email: str,
     month: str,
     credit: float,
 ):
@@ -210,7 +209,7 @@ async def set_monthly_credit(
     """
 
     return await FinanceService.set_credit(
-        username,
+        email,
         month,
         Decimal(str(credit)),
     )
@@ -218,7 +217,7 @@ async def set_monthly_credit(
 
 @mcp.tool()
 async def get_monthly_finance(
-    username: str,
+    email: str,
     month: str,
 ):
     """
@@ -226,7 +225,7 @@ async def get_monthly_finance(
     """
 
     return await FinanceService.get_month(
-        username,
+        email,
         month,
     )
 
@@ -237,7 +236,7 @@ async def get_monthly_finance(
 
 @mcp.tool()
 async def summarize(
-    username: str,
+    email: str,
     start_date: date,
     end_date: date,
     category: str | None = None,
@@ -247,7 +246,7 @@ async def summarize(
     """
 
     return await SummaryService.summarize(
-        username,
+        email,
         start_date,
         end_date,
         category,

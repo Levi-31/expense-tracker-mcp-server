@@ -11,14 +11,14 @@ class SummaryService:
 
     @staticmethod
     async def summarize(
-        username: str,
+        email: str,
         start_date: date,
         end_date: date,
         category: str | None = None,
     ) -> dict:
 
         user_id = await UserRepository.get_or_create_user(
-            username,
+            email,
         )
 
         month = start_date.replace(day=1)

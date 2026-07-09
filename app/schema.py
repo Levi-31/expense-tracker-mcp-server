@@ -18,7 +18,7 @@ async def init_db():
                     id UUID PRIMARY KEY
                         DEFAULT gen_random_uuid(),
 
-                    username TEXT UNIQUE NOT NULL,
+                    email TEXT UNIQUE NOT NULL,
 
                     full_name TEXT DEFAULT '',
 
