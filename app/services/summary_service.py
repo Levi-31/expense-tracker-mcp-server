@@ -1,18 +1,25 @@
 import asyncio
+from datetime import date
 from decimal import Decimal
 
 from app.repository.expense_repository import ExpenseRepository
 from app.repository.finance_repository import FinanceRepository
+from app.repository.user_repository import UserRepository
 
 
 class SummaryService:
 
     @staticmethod
     async def summarize(
-        start_date,
-        end_date,
-        category=None,
-    ):
+        username: str,
+        start_date: date,
+        end_date: date,
+        category: str | None = None,
+    ) -> dict:
+
+        user_id = await UserRepository.get_or_create_user(
+            username,
+        )
 
         month = start_date.replace(day=1)
 
@@ -23,17 +30,20 @@ class SummaryService:
         ) = await asyncio.gather(
 
             ExpenseRepository.category_summary(
+                user_id,
                 start_date,
                 end_date,
                 category,
             ),
 
             ExpenseRepository.summary_stats(
+                user_id,
                 start_date,
                 end_date,
             ),
 
             FinanceRepository.get_month(
+                user_id,
                 month,
             ),
         )

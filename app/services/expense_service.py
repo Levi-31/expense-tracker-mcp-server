@@ -1,13 +1,24 @@
+from datetime import date
+
 from app.models import ExpenseCreate
 from app.repository.expense_repository import ExpenseRepository
+from app.repository.user_repository import UserRepository
 
 
 class ExpenseService:
 
     @staticmethod
-    async def add_expense(data: ExpenseCreate):
+    async def add_expense(
+        username: str,
+        data: ExpenseCreate,
+    ) -> dict:
+
+        user_id = await UserRepository.get_or_create_user(
+            username,
+        )
 
         expense_id = await ExpenseRepository.add(
+            user_id=user_id,
             expense_date=data.date,
             amount=data.amount,
             category=data.category.strip(),
@@ -22,11 +33,17 @@ class ExpenseService:
 
     @staticmethod
     async def list_expenses(
-        start_date,
-        end_date,
-    ):
+        username: str,
+        start_date: date,
+        end_date: date,
+    ) -> dict:
+
+        user_id = await UserRepository.get_or_create_user(
+            username,
+        )
 
         expenses = await ExpenseRepository.list_between(
+            user_id,
             start_date,
             end_date,
         )
@@ -38,9 +55,19 @@ class ExpenseService:
         }
 
     @staticmethod
-    async def delete_expense(expense_id: int):
+    async def delete_expense(
+        username: str,
+        expense_id: int,
+    ) -> dict:
 
-        deleted = await ExpenseRepository.delete(expense_id)
+        user_id = await UserRepository.get_or_create_user(
+            username,
+        )
+
+        deleted = await ExpenseRepository.delete(
+            user_id,
+            expense_id,
+        )
 
         if not deleted:
             return {
@@ -55,11 +82,17 @@ class ExpenseService:
 
     @staticmethod
     async def update_expense(
+        username: str,
         expense_id: int,
         data: ExpenseCreate,
-    ):
+    ) -> dict:
+
+        user_id = await UserRepository.get_or_create_user(
+            username,
+        )
 
         updated = await ExpenseRepository.update(
+            user_id,
             expense_id,
             data.date,
             data.amount,
@@ -81,9 +114,19 @@ class ExpenseService:
         }
 
     @staticmethod
-    async def recent(limit: int = 10):
+    async def recent(
+        username: str,
+        limit: int = 10,
+    ) -> dict:
 
-        expenses = await ExpenseRepository.recent(limit)
+        user_id = await UserRepository.get_or_create_user(
+            username,
+        )
+
+        expenses = await ExpenseRepository.recent(
+            user_id,
+            limit,
+        )
 
         return {
             "status": "ok",
