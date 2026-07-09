@@ -16,6 +16,7 @@ class ExpenseRepository:
         subcategory: str,
         note: str,
         is_borrowed: bool = False,
+        is_settled: bool = False,
     ) -> int:
 
         async with get_connection() as conn:
@@ -32,10 +33,12 @@ class ExpenseRepository:
                         category,
                         subcategory,
                         note,
-                        is_borrowed
+                        is_borrowed,
+                        is_settled
                     )
                     VALUES
                     (
+                        %s,
                         %s,
                         %s,
                         %s,
@@ -54,6 +57,7 @@ class ExpenseRepository:
                         subcategory,
                         note,
                         is_borrowed,
+                        is_settled,
                     ),
                 )
 
@@ -79,7 +83,8 @@ class ExpenseRepository:
             category,
             subcategory,
             note,
-            is_borrowed
+            is_borrowed,
+            is_settled
         FROM expenses
         WHERE user_id = %s
           AND date BETWEEN %s AND %s
@@ -216,6 +221,7 @@ class ExpenseRepository:
         subcategory: str,
         note: str,
         is_borrowed: bool = False,
+        is_settled: bool = False,
     ) -> bool:
 
         async with get_connection() as conn:
@@ -231,7 +237,8 @@ class ExpenseRepository:
                         category = %s,
                         subcategory = %s,
                         note = %s,
-                        is_borrowed = %s
+                        is_borrowed = %s,
+                        is_settled = %s
                     WHERE id = %s
                       AND user_id = %s
                     """,
@@ -242,6 +249,7 @@ class ExpenseRepository:
                         subcategory,
                         note,
                         is_borrowed,
+                        is_settled,
                         expense_id,
                         user_id,
                     ),
@@ -268,7 +276,8 @@ class ExpenseRepository:
             category,
             subcategory,
             note,
-            is_borrowed
+            is_borrowed,
+            is_settled
         FROM expenses
         WHERE user_id = %s
         """
@@ -340,7 +349,7 @@ class ExpenseRepository:
         end_date: date,
     ) -> dict:
         """
-        Returns stats for borrowed expenses (amount lent to friends).
+        Returns stats for borrowed expenses, separating outstanding and settled amounts.
         """
         async with get_connection() as conn:
 
@@ -349,8 +358,9 @@ class ExpenseRepository:
                 await cur.execute(
                     """
                     SELECT
-                        COALESCE(SUM(amount), 0) AS total_borrowed,
-                        COUNT(*) AS transactions
+                        COALESCE(SUM(CASE WHEN is_settled = FALSE THEN amount ELSE 0 END), 0) AS total_borrowed,
+                        COALESCE(SUM(CASE WHEN is_settled = TRUE THEN amount ELSE 0 END), 0) AS total_settled,
+                        COUNT(*) AS total_transactions
                     FROM expenses
                     WHERE user_id = %s
                       AND date BETWEEN %s AND %s
@@ -360,3 +370,33 @@ class ExpenseRepository:
                 )
 
                 return await cur.fetchone()
+
+    @staticmethod
+    async def settle(
+        user_id: UUID,
+        expense_id: int,
+        is_settled: bool = True,
+    ) -> bool:
+        """
+        Mark a borrowed expense as settled (repaid).
+        """
+        async with get_connection() as conn:
+
+            async with conn.cursor() as cur:
+
+                await cur.execute(
+                    """
+                    UPDATE expenses
+                    SET is_settled = %s
+                    WHERE id = %s
+                      AND user_id = %s
+                      AND is_borrowed = TRUE
+                    """,
+                    (is_settled, expense_id, user_id),
+                )
+
+                updated = cur.rowcount
+
+            await conn.commit()
+
+        return updated > 0

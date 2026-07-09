@@ -62,6 +62,7 @@ class SummaryService:
         average_transaction = summary["average_transaction"]
 
         total_borrowed = borrowed_data["total_borrowed"] or Decimal("0")
+        total_settled = borrowed_data["total_settled"] or Decimal("0")
 
         budget = Decimal("0")
         credit = Decimal("0")
@@ -103,7 +104,7 @@ class SummaryService:
             2,
         )
 
-        # Convert category_summary to list and append borrowed if exists
+        # Convert category_summary to list and append borrowed and repaid if they exist
         cat_summary_list = [
             {
                 "category": row["category"],
@@ -118,6 +119,12 @@ class SummaryService:
             cat_summary_list.append({
                 "category": "borrowed",
                 "total_amount": float(total_borrowed),
+            })
+
+        if total_settled > 0:
+            cat_summary_list.append({
+                "category": "repaid",
+                "total_amount": float(total_settled),
             })
 
         # Sort descending
@@ -143,6 +150,8 @@ class SummaryService:
             "total_expense": float(total_expense),
 
             "total_borrowed": float(total_borrowed),
+
+            "total_repaid": float(total_settled),
 
             "remaining_budget": float(
                 remaining_budget

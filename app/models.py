@@ -25,6 +25,8 @@ class ExpenseCreate(BaseModel):
 
     is_borrowed: bool = False
 
+    is_settled: bool = False
+
 
 
 class MonthlyBudget(BaseModel):

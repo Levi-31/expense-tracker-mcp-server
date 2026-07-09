@@ -138,6 +138,7 @@ async def add_expense(
     subcategory: str = "",
     note: str = "",
     is_borrowed: bool = False,
+    is_settled: bool = False,
     email: str | None = None,
 ):
     """
@@ -157,6 +158,7 @@ async def add_expense(
         subcategory=subcategory,
         note=note,
         is_borrowed=is_borrowed,
+        is_settled=is_settled,
     )
 
     return await ExpenseService.add_expense(
@@ -199,6 +201,7 @@ async def update_expense(
     subcategory: str = "",
     note: str = "",
     is_borrowed: bool = False,
+    is_settled: bool = False,
     email: str | None = None,
 ):
     """
@@ -218,6 +221,7 @@ async def update_expense(
         subcategory=subcategory,
         note=note,
         is_borrowed=is_borrowed,
+        is_settled=is_settled,
     )
 
     return await ExpenseService.update_expense(
@@ -268,6 +272,30 @@ async def recent_expenses(
     return await ExpenseService.recent(
         active_email,
         limit,
+    )
+
+
+@mcp.tool()
+async def settle_borrowed_expense(
+    ctx: Context,
+    expense_id: int,
+    is_settled: bool = True,
+    email: str | None = None,
+) -> dict:
+    """
+    Mark an outstanding borrowed expense as settled (repaid). Resolves user from session or takes optional email.
+    """
+    active_email = email or await ctx.get_state("email")
+    if not active_email:
+        return {
+            "status": "unauthenticated",
+            "message": "No active session. Please login first using login(email='user@example.com').",
+        }
+
+    return await ExpenseService.settle_expense(
+        active_email,
+        expense_id,
+        is_settled,
     )
 
 

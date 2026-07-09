@@ -53,7 +53,9 @@ async def init_db():
 
                     note TEXT DEFAULT '',
 
-                    is_borrowed BOOLEAN DEFAULT FALSE
+                    is_borrowed BOOLEAN DEFAULT FALSE,
+
+                    is_settled BOOLEAN DEFAULT FALSE
 
                 );
                 """
@@ -92,6 +94,14 @@ async def init_db():
                 CREATE INDEX IF NOT EXISTS
                 idx_expense_user_borrowed
                 ON expenses(user_id, is_borrowed);
+                """
+            )
+
+            await cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS
+                idx_expense_user_settled
+                ON expenses(user_id, is_borrowed, is_settled);
                 """
             )
 

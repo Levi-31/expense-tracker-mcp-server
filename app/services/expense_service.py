@@ -44,6 +44,7 @@ class ExpenseService:
             subcategory=subcategory,
             note=data.note.strip(),
             is_borrowed=is_borrowed,
+            is_settled=data.is_settled,
         )
 
         return {
@@ -138,6 +139,7 @@ class ExpenseService:
             subcategory=subcategory,
             note=data.note.strip(),
             is_borrowed=is_borrowed,
+            is_settled=data.is_settled,
         )
 
         if not updated:
@@ -170,4 +172,33 @@ class ExpenseService:
         return {
             "status": "ok",
             "expenses": expenses,
+        }
+
+    @staticmethod
+    async def settle_expense(
+        email: str,
+        expense_id: int,
+        is_settled: bool = True,
+    ) -> dict:
+
+        user_id = await UserRepository.get_or_create_user(
+            email,
+        )
+
+        updated = await ExpenseRepository.settle(
+            user_id,
+            expense_id,
+            is_settled,
+        )
+
+        if not updated:
+            return {
+                "status": "error",
+                "message": "Borrowed expense not found.",
+            }
+
+        status_text = "settled" if is_settled else "unsettled"
+        return {
+            "status": "ok",
+            "message": f"Expense marked as {status_text} successfully.",
         }
