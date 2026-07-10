@@ -157,6 +157,12 @@
         "self_usage",
         "borrowed_to_friend"
     ],
+    "lending": [
+        "lent_to_friend",
+        "borrowed_to_friend",
+        "repayment",
+        "other"
+    ],
     "misc": [
         "uncategorized",
         "rounding",

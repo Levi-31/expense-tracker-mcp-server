@@ -51,7 +51,11 @@ mcp = FastMCP(
         "You must first ask the user to log in if they haven't done so in this session. "
         "Use the login(email) tool to authenticate the user and save their session. "
         "Once logged in, you do not need to provide the 'email' parameter for subsequent tool calls. "
-        "If you get an 'unauthenticated' status code, prompt the user to log in."
+        "If you get an 'unauthenticated' status code, prompt the user to log in.\n\n"
+        "CRITICAL RULE: Whenever a credit card expense is being added (or using the 'credit_card_usage' category), "
+        "if the user has not specified whether it is for self-use or borrowed by a friend, you MUST ask the user "
+        "for clarification (e.g. 'Is this credit card expense for self-use or was it borrowed by a friend?') "
+        "before invoking the add_expense tool."
     ),
     lifespan=lifespan,
 )

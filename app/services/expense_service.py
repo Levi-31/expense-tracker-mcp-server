@@ -27,10 +27,15 @@ class ExpenseService:
 
         # Auto-detect is_borrowed
         is_borrowed = data.is_borrowed
+        is_settled = data.is_settled
         note_lower = data.note.lower()
-        if (category == "credit_card_usage" and subcategory == "borrowed_to_friend") or \
+        if (category == "lending") or \
+           (category == "credit_card_usage" and subcategory == "borrowed_to_friend") or \
            ("borrowed to a friend" in note_lower or "borrowed to friend" in note_lower or "lent to" in note_lower):
             is_borrowed = True
+
+        if subcategory == "repayment":
+            is_settled = True
 
         user_id = await UserRepository.get_or_create_user(
             email,
@@ -121,10 +126,15 @@ class ExpenseService:
 
         # Auto-detect is_borrowed
         is_borrowed = data.is_borrowed
+        is_settled = data.is_settled
         note_lower = data.note.lower()
-        if (category == "credit_card_usage" and subcategory == "borrowed_to_friend") or \
+        if (category == "lending") or \
+           (category == "credit_card_usage" and subcategory == "borrowed_to_friend") or \
            ("borrowed to a friend" in note_lower or "borrowed to friend" in note_lower or "lent to" in note_lower):
             is_borrowed = True
+
+        if subcategory == "repayment":
+            is_settled = True
 
         user_id = await UserRepository.get_or_create_user(
             email,
