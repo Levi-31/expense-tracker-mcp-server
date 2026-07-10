@@ -147,7 +147,17 @@ async def add_expense(
     email: str | None = None,
 ):
     """
-    Add a new expense. Resolves the user from session or takes optional email.
+    Add a new expense.
+
+    Args:
+        date: Date of the expense formatted as YYYY-MM-DD.
+        amount: Positive numeric amount.
+        category: Category name.
+        subcategory: Subcategory name.
+        note: Description of the expense.
+        is_borrowed: Set to True if this expense was borrowed by a friend. CRITICAL: If a credit card expense is added and the user has not specified whether it is for self-use or borrowed by a friend, you MUST ask the user in chat for clarification before calling this tool.
+        is_settled: Set to True if the borrowed expense was repaid.
+        email: Optional email parameter.
     """
     session = await SessionRepository.get_session(ctx.session_id)
     active_email = email or (session["email"] if session else None)
@@ -212,7 +222,18 @@ async def update_expense(
     email: str | None = None,
 ):
     """
-    Update an existing expense. Resolves user from session or takes optional email.
+    Update an existing expense.
+
+    Args:
+        expense_id: The ID of the expense to update.
+        date: Date of the expense formatted as YYYY-MM-DD.
+        amount: Positive numeric amount.
+        category: Category name.
+        subcategory: Subcategory name.
+        note: Description of the expense.
+        is_borrowed: Set to True if this expense was borrowed by a friend. CRITICAL: If a credit card expense is updated and the user has not specified whether it is for self-use or borrowed by a friend, you MUST ask the user in chat for clarification before calling this tool.
+        is_settled: Set to True if the borrowed expense was repaid.
+        email: Optional email parameter.
     """
     session = await SessionRepository.get_session(ctx.session_id)
     active_email = email or (session["email"] if session else None)
