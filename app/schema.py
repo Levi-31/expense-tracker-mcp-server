@@ -141,4 +141,26 @@ async def init_db():
                 """
             )
 
+            # -------------------------------------------------
+            # User sessions table
+            # -------------------------------------------------
+
+            await cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_sessions(
+
+                    session_id TEXT PRIMARY KEY,
+
+                    user_id UUID NOT NULL
+                        REFERENCES users(id)
+                        ON DELETE CASCADE,
+
+                    email TEXT NOT NULL,
+
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+
+                );
+                """
+            )
+
         await conn.commit()

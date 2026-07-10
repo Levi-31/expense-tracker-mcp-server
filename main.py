@@ -14,6 +14,7 @@ from app.services.expense_service import ExpenseService
 from app.services.finance_service import FinanceService
 from app.services.summary_service import SummaryService
 from app.repository.user_repository import UserRepository
+from app.repository.session_repository import SessionRepository
 
 
 # ---------------------------------------------------------
@@ -80,11 +81,11 @@ async def login(
 ) -> dict:
     """
     Log in a user by their email. Automatically creates the user if they don't exist.
-    Stores the user session state in the active MCP connection.
+    Stores the user session state in the active MCP connection database.
     """
     normalized_email = email.strip().lower()
-    await UserRepository.get_or_create_user(normalized_email)
-    await ctx.set_state("email", normalized_email)
+    user_id = await UserRepository.get_or_create_user(normalized_email)
+    await SessionRepository.set_session(ctx.session_id, normalized_email, user_id)
     return {
         "status": "ok",
         "message": f"Successfully logged in as {normalized_email}",
@@ -99,7 +100,7 @@ async def logout(
     """
     Logs out the current user session and clears the session state.
     """
-    await ctx.delete_state("email")
+    await SessionRepository.delete_session(ctx.session_id)
     return {
         "status": "ok",
         "message": "Successfully logged out.",
@@ -113,15 +114,15 @@ async def get_current_user(
     """
     Returns the currently logged-in user email in this session.
     """
-    email = await ctx.get_state("email")
-    if not email:
+    session = await SessionRepository.get_session(ctx.session_id)
+    if not session:
         return {
             "status": "unauthenticated",
             "message": "No active session. Please login first.",
         }
     return {
         "status": "ok",
-        "email": email,
+        "email": session["email"],
     }
 
 
@@ -144,7 +145,8 @@ async def add_expense(
     """
     Add a new expense. Resolves the user from session or takes optional email.
     """
-    active_email = email or await ctx.get_state("email")
+    session = await SessionRepository.get_session(ctx.session_id)
+    active_email = email or (session["email"] if session else None)
     if not active_email:
         return {
             "status": "unauthenticated",
@@ -177,7 +179,8 @@ async def list_expenses(
     """
     List expenses within a date range. Resolves user from session or takes optional email.
     """
-    active_email = email or await ctx.get_state("email")
+    session = await SessionRepository.get_session(ctx.session_id)
+    active_email = email or (session["email"] if session else None)
     if not active_email:
         return {
             "status": "unauthenticated",
@@ -207,7 +210,8 @@ async def update_expense(
     """
     Update an existing expense. Resolves user from session or takes optional email.
     """
-    active_email = email or await ctx.get_state("email")
+    session = await SessionRepository.get_session(ctx.session_id)
+    active_email = email or (session["email"] if session else None)
     if not active_email:
         return {
             "status": "unauthenticated",
@@ -240,7 +244,8 @@ async def delete_expense(
     """
     Delete an expense. Resolves user from session or takes optional email.
     """
-    active_email = email or await ctx.get_state("email")
+    session = await SessionRepository.get_session(ctx.session_id)
+    active_email = email or (session["email"] if session else None)
     if not active_email:
         return {
             "status": "unauthenticated",
@@ -262,7 +267,8 @@ async def recent_expenses(
     """
     Return latest expenses. Resolves user from session or takes optional email.
     """
-    active_email = email or await ctx.get_state("email")
+    session = await SessionRepository.get_session(ctx.session_id)
+    active_email = email or (session["email"] if session else None)
     if not active_email:
         return {
             "status": "unauthenticated",
@@ -285,7 +291,8 @@ async def settle_borrowed_expense(
     """
     Mark an outstanding borrowed expense as settled (repaid). Resolves user from session or takes optional email.
     """
-    active_email = email or await ctx.get_state("email")
+    session = await SessionRepository.get_session(ctx.session_id)
+    active_email = email or (session["email"] if session else None)
     if not active_email:
         return {
             "status": "unauthenticated",
@@ -313,7 +320,8 @@ async def set_monthly_budget(
     """
     Set monthly budget. Resolves user from session or takes optional email.
     """
-    active_email = email or await ctx.get_state("email")
+    session = await SessionRepository.get_session(ctx.session_id)
+    active_email = email or (session["email"] if session else None)
     if not active_email:
         return {
             "status": "unauthenticated",
@@ -337,7 +345,8 @@ async def set_monthly_credit(
     """
     Set monthly credit. Resolves user from session or takes optional email.
     """
-    active_email = email or await ctx.get_state("email")
+    session = await SessionRepository.get_session(ctx.session_id)
+    active_email = email or (session["email"] if session else None)
     if not active_email:
         return {
             "status": "unauthenticated",
@@ -360,7 +369,8 @@ async def get_monthly_finance(
     """
     Get configured budget & credit. Resolves user from session or takes optional email.
     """
-    active_email = email or await ctx.get_state("email")
+    session = await SessionRepository.get_session(ctx.session_id)
+    active_email = email or (session["email"] if session else None)
     if not active_email:
         return {
             "status": "unauthenticated",
@@ -388,7 +398,8 @@ async def summarize(
     """
     Dashboard summary. Resolves user from session or takes optional email.
     """
-    active_email = email or await ctx.get_state("email")
+    session = await SessionRepository.get_session(ctx.session_id)
+    active_email = email or (session["email"] if session else None)
     if not active_email:
         return {
             "status": "unauthenticated",
