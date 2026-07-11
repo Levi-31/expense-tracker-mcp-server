@@ -439,6 +439,35 @@ async def summarize(
     )
 
 
+@mcp.tool()
+async def monthly_history(
+    ctx: Context,
+    months: int = 3,
+    email: str | None = None,
+):
+    """
+    Returns a month-by-month breakdown for the last N months showing
+    budget, credit limit, total spent, credit card spent, remaining
+    budget, remaining credit, borrowed, and repaid for each month.
+
+    Args:
+        months: Number of months to look back (default 3).
+        email: Optional email override.
+    """
+    session = await SessionRepository.get_session(ctx.session_id)
+    active_email = email or (session["email"] if session else None)
+    if not active_email:
+        return {
+            "status": "unauthenticated",
+            "message": "No active session. Please login first using login(email='user@example.com').",
+        }
+
+    return await SummaryService.monthly_history(
+        active_email,
+        months,
+    )
+
+
 # ---------------------------------------------------------
 # Health Check
 # ---------------------------------------------------------
