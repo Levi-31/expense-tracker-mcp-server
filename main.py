@@ -446,9 +446,13 @@ async def monthly_history(
     email: str | None = None,
 ):
     """
-    Returns a month-by-month breakdown for the last N months showing
-    budget, income (salary), total spent, credit card spent, remaining
-    budget, savings, borrowed, and repaid for each month.
+    Use this tool when the user asks about spending across multiple months
+    (e.g. "last 3 months", "show me May to July", "compare my spending").
+
+    IMPORTANT: You MUST present the returned data to the user as a month-by-month
+    bifurcation (e.g., separate breakdown for each month). Do NOT combine, aggregate,
+    or sum the monthly values together into a single total range summary. Present
+    each month's budget, income, spent, and savings individually.
 
     Args:
         months: Number of months to look back (default 3).

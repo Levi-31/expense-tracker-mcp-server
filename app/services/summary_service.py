@@ -209,8 +209,9 @@ class SummaryService:
         months: int = 3,
     ) -> dict:
         """
-        Returns a per-month breakdown of budget, credit, total spend,
-        credit card usage, borrowed, and repaid for the last N months.
+        Returns a per-month breakdown of budget, income (salary), total spend,
+        credit card usage, savings, borrowed, and repaid for the last N months.
+        Months with no data are clearly marked.
         """
         import calendar
         from datetime import date as date_type
