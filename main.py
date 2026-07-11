@@ -368,7 +368,7 @@ async def set_monthly_credit(
     email: str | None = None,
 ):
     """
-    Set monthly credit. Resolves user from session or takes optional email.
+    Set monthly income (salary / net income). Resolves user from session or takes optional email.
     """
     session = await SessionRepository.get_session(ctx.session_id)
     active_email = email or (session["email"] if session else None)
@@ -392,7 +392,7 @@ async def get_monthly_finance(
     email: str | None = None,
 ):
     """
-    Get configured budget & credit. Resolves user from session or takes optional email.
+    Get configured budget & income. Resolves user from session or takes optional email.
     """
     session = await SessionRepository.get_session(ctx.session_id)
     active_email = email or (session["email"] if session else None)
@@ -447,8 +447,8 @@ async def monthly_history(
 ):
     """
     Returns a month-by-month breakdown for the last N months showing
-    budget, credit limit, total spent, credit card spent, remaining
-    budget, remaining credit, borrowed, and repaid for each month.
+    budget, income (salary), total spent, credit card spent, remaining
+    budget, savings, borrowed, and repaid for each month.
 
     Args:
         months: Number of months to look back (default 3).

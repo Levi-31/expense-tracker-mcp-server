@@ -84,9 +84,9 @@ class SummaryService:
             budget = finance["budget"] or Decimal("0")
             credit = finance["credit"] or Decimal("0")
 
-        # Budget/credit remaining always uses the full month's spend
+        # Budget/savings remaining always uses the full month's spend
         remaining_budget = budget - month_total
-        remaining_credit = credit - month_total
+        savings = credit - month_total
 
         over_budget = False
         over_budget_amount = Decimal("0")
@@ -158,7 +158,7 @@ class SummaryService:
 
             "budget": float(budget),
 
-            "credit": float(credit),
+            "income": float(credit),
 
             "total_expense": float(total_expense),
 
@@ -170,8 +170,8 @@ class SummaryService:
                 remaining_budget
             ),
 
-            "remaining_credit": float(
-                remaining_credit
+            "savings": float(
+                savings
             ),
 
             "budget_used_percent": float(
@@ -253,26 +253,45 @@ class SummaryService:
             finance = results[idx + 3]
             idx += 4
 
+            total_borrowed = borrowed_data["total_borrowed"] or Decimal("0")
+            total_repaid = borrowed_data["total_settled"] or Decimal("0")
+
+            has_expenses = total_spent > 0 or cc_spent > 0 or total_borrowed > 0
+            has_finance = finance is not None
+
+            if not has_expenses and not has_finance:
+                breakdown.append({
+                    "month": m.strftime("%Y-%m"),
+                    "status": "no_data",
+                    "message": "No expenses or budget configured for this month.",
+                })
+                continue
+
             budget = Decimal("0")
             credit = Decimal("0")
             if finance:
                 budget = finance["budget"] or Decimal("0")
                 credit = finance["credit"] or Decimal("0")
 
-            total_borrowed = borrowed_data["total_borrowed"] or Decimal("0")
-            total_repaid = borrowed_data["total_settled"] or Decimal("0")
-
-            breakdown.append({
+            entry = {
                 "month": m.strftime("%Y-%m"),
-                "budget": float(budget),
-                "credit_limit": float(credit),
+                "status": "ok",
                 "total_spent": float(total_spent),
                 "credit_card_spent": float(cc_spent),
-                "remaining_budget": float(budget - total_spent),
-                "remaining_credit": float(credit - cc_spent),
                 "total_borrowed": float(total_borrowed),
                 "total_repaid": float(total_repaid),
-            })
+            }
+
+            if has_finance:
+                entry["budget"] = float(budget)
+                entry["income"] = float(credit)
+                entry["remaining_budget"] = float(budget - total_spent)
+                entry["savings"] = float(credit - total_spent)
+            else:
+                entry["budget"] = "not_set"
+                entry["income"] = "not_set"
+
+            breakdown.append(entry)
 
         return {
             "status": "ok",
