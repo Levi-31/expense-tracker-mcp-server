@@ -33,7 +33,7 @@ class ScopeMiddleware:
     async def __call__(self, scope, receive, send):
         current_scope.set(scope)
         
-        if scope["type"] == "http" and scope["path"] == "/sse":
+        if scope["type"] == "http" and scope["path"] in ("/sse", "/mcp"):
             # Extract cookies
             headers = {k.decode("utf-8").lower(): v.decode("utf-8") for k, v in scope.get("headers", [])}
             cookie_header = headers.get("cookie", "")
@@ -729,7 +729,9 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))
 
     mcp.run(
-        transport="sse",
+        transport="http",
+        path="/sse",
+        host_origin_protection=False,
         host="0.0.0.0",
         port=port,
         middleware=[Middleware(ScopeMiddleware)],
