@@ -79,6 +79,21 @@ async def lifespan(app: FastMCP):
 class CustomFastMCP(FastMCP):
     def streamable_http_app(self) -> Starlette:
         app = super().streamable_http_app()
+        original_lifespan = app.router.lifespan_context
+
+        @asynccontextmanager
+        async def combined_lifespan(app_instance: Starlette):
+            await open_pool()
+            await init_db()
+            print("✅ PostgreSQL pool initialized via HTTP lifespan.")
+            try:
+                async with original_lifespan(app_instance):
+                    yield
+            finally:
+                await close_pool()
+                print("✅ PostgreSQL pool closed via HTTP lifespan.")
+
+        app.router.lifespan_context = combined_lifespan
         app.add_middleware(
             CORSMiddleware,
             allow_origins=["*"],
@@ -90,6 +105,19 @@ class CustomFastMCP(FastMCP):
 
     def sse_app(self, mount_path: str | None = None) -> Starlette:
         app = super().sse_app(mount_path)
+
+        @asynccontextmanager
+        async def sse_lifespan(app_instance: Starlette):
+            await open_pool()
+            await init_db()
+            print("✅ PostgreSQL pool initialized via SSE lifespan.")
+            try:
+                yield
+            finally:
+                await close_pool()
+                print("✅ PostgreSQL pool closed via SSE lifespan.")
+
+        app.router.lifespan_context = sse_lifespan
         app.add_middleware(
             CORSMiddleware,
             allow_origins=["*"],
