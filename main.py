@@ -711,7 +711,7 @@ if __name__ == "__main__":
             Middleware(
                 CORSMiddleware,
                 allow_origins=["*"],
-                allow_credentials=True,
+                allow_credentials=False,
                 allow_methods=["*"],
                 allow_headers=["*"],
             ),
