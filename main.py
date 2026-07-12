@@ -57,11 +57,17 @@ def get_session_id(ctx: Context) -> str:
     if request_ctx is not None:
         request = getattr(request_ctx, "request", None)
         if request is not None:
-            # 1. Check SSE query parameter session_id
+            # 1. Check for client_id query parameter — derive a deterministic session ID
+            #    This works across ALL transports (SSE and Streamable HTTP) and survives
+            #    Cloud Run cold starts because it's derived from the URL, not in-memory state.
+            client_id = request.query_params.get("client_id")
+            if client_id:
+                return str(uuid.uuid5(uuid.NAMESPACE_DNS, client_id))
+            # 2. Check SSE query parameter session_id
             session_id = request.query_params.get("session_id")
             if session_id:
                 return session_id
-            # 2. Check header
+            # 3. Check header
             session_id = request.headers.get("mcp-session-id")
             if session_id:
                 return session_id
