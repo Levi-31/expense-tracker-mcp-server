@@ -1,0 +1,17 @@
+.git
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.env
+.python-version
+.idea
+.vscode
+*.log
+docker-compose.yml
+gcp_deployment.md
+oracle_cloud_deployment.md
+walkthrough.md
+implementation_plan.md
+task.md
