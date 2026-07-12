@@ -35,7 +35,9 @@ class DatabaseOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, 
                     return None
                 
                 # Deserialization
-                info_dict = json.loads(row["client_info"])
+                info_dict = row["client_info"]
+                if isinstance(info_dict, str):
+                    info_dict = json.loads(info_dict)
                 return OAuthClientInformationFull.model_validate(info_dict)
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
@@ -109,7 +111,7 @@ class DatabaseOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, 
                 # Return standard AuthorizationCode class
                 return AuthorizationCode(
                     code=row["code"],
-                    scopes=json.loads(row["scopes"]),
+                    scopes=row["scopes"] if isinstance(row["scopes"], list) else json.loads(row["scopes"]),
                     expires_at=row["expires_at"].timestamp(),
                     client_id=row["client_id"],
                     code_challenge=row["code_challenge"],
@@ -208,7 +210,7 @@ class DatabaseOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, 
                 return RefreshToken(
                     token=row["token"],
                     client_id=row["client_id"],
-                    scopes=json.loads(row["scopes"]),
+                    scopes=row["scopes"] if isinstance(row["scopes"], list) else json.loads(row["scopes"]),
                     expires_at=int(row["expires_at"].timestamp()) if row["expires_at"] else None,
                     subject=row["email"],
                 )
@@ -291,7 +293,7 @@ class DatabaseOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, 
                 return AccessToken(
                     token=row["token"],
                     client_id=row["client_id"],
-                    scopes=json.loads(row["scopes"]),
+                    scopes=row["scopes"] if isinstance(row["scopes"], list) else json.loads(row["scopes"]),
                     expires_at=int(row["expires_at"].timestamp()) if row["expires_at"] else None,
                     subject=row["email"],
                 )
