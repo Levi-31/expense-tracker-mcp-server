@@ -4,11 +4,12 @@ from datetime import date
 import os
 import httpx
 
-from fastmcp import FastMCP, Context
+from mcp.server.fastmcp import FastMCP, Context
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
+from starlette.applications import Starlette
 
-from app.databases import open_pool, close_pool
+from app.databases import open_pool, close_pool, get_connection
 from app.schema import init_db
 from app.resources import get_categories
 
@@ -19,59 +20,32 @@ from app.services.finance_service import FinanceService
 from app.services.summary_service import SummaryService
 from app.repository.user_repository import UserRepository
 from app.repository.session_repository import SessionRepository
-from contextvars import ContextVar
 import uuid
 from starlette.datastructures import QueryParams
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 
-current_scope: ContextVar = ContextVar("current_scope", default=None)
-
-class ScopeMiddleware:
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        current_scope.set(scope)
-        await self.app(scope, receive, send)
+# MCP OAuth Imports
+from app.auth.oauth_provider import DatabaseOAuthProvider
+from mcp.server.auth.provider import ProviderTokenVerifier
+from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
+from pydantic import AnyHttpUrl
 
 
-def custom_uuid4() -> uuid.UUID:
-    scope = current_scope.get()
-    if scope and scope.get("type") == "http":
-        # Check for client_id query parameter (uniform way to persist sessions for all LLMs)
-        query_string = scope.get("query_string", b"").decode("utf-8")
-        params = QueryParams(query_string)
-        client_id = params.get("client_id")
-        if client_id:
-            # Generate a deterministic UUID based on client_id
-            return uuid.uuid5(uuid.NAMESPACE_DNS, client_id)
-    return uuid.uuid4()
-
-import mcp.server.sse
-mcp.server.sse.uuid4 = custom_uuid4
-
-
-def get_session_id(ctx: Context) -> str:
+def get_authenticated_email(ctx: Context) -> str:
+    """
+    Extract the authenticated user email from the OAuth Bearer token scope.
+    Since RequireAuthMiddleware is active, it guarantees the user is authenticated.
+    """
     request_ctx = getattr(ctx, "request_context", None)
     if request_ctx is not None:
         request = getattr(request_ctx, "request", None)
         if request is not None:
-            # 1. Check for client_id query parameter — derive a deterministic session ID
-            #    This works across ALL transports (SSE and Streamable HTTP) and survives
-            #    Cloud Run cold starts because it's derived from the URL, not in-memory state.
-            client_id = request.query_params.get("client_id")
-            if client_id:
-                return str(uuid.uuid5(uuid.NAMESPACE_DNS, client_id))
-            # 2. Check SSE query parameter session_id
-            session_id = request.query_params.get("session_id")
-            if session_id:
-                return session_id
-            # 3. Check header
-            session_id = request.headers.get("mcp-session-id")
-            if session_id:
-                return session_id
-    return ctx.session_id
+            user = request.scope.get("user")
+            if user and hasattr(user, "access_token") and user.access_token:
+                if user.access_token.subject:
+                    return user.access_token.subject
+    raise RuntimeError("User is not authenticated.")
 
 
 # ---------------------------------------------------------
@@ -102,20 +76,51 @@ async def lifespan(app: FastMCP):
 # MCP Server
 # ---------------------------------------------------------
 
-mcp = FastMCP(
+class CustomFastMCP(FastMCP):
+    def streamable_http_app(self) -> Starlette:
+        app = super().streamable_http_app()
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+        return app
+
+    def sse_app(self, mount_path: str | None = None) -> Starlette:
+        app = super().sse_app(mount_path)
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+        return app
+port = int(os.getenv("PORT", "8000"))
+public_url = os.getenv("PUBLIC_URL") or "https://expense-tracker-mcp-404722039668.asia-south1.run.app"
+oauth_provider = DatabaseOAuthProvider()
+
+mcp = CustomFastMCP(
     "Expense Tracker",
     instructions=(
-        "You must first ask the user to log in if they haven't done so in this session. "
-        "Use the google_login() tool to authenticate the user. It will return a Google Sign-In link. "
-        "Ask the user to open this link in their browser. Once they complete the sign-in, ask them to verify and then proceed. "
-        "Under the hood, their session will be automatically authenticated after they sign in. "
-        "If you get an 'unauthenticated' status code, prompt the user to log in via google_login().\n\n"
+        "The user must be authenticated. The client will automatically prompt the user to sign in natively.\n\n"
         "CRITICAL RULE: Whenever a credit card expense is being added (or using the 'credit_card_usage' category), "
         "if the user has not specified whether it is for self-use or borrowed by a friend, you MUST ask the user "
         "for clarification (e.g. 'Is this credit card expense for self-use or was it borrowed by a friend?') "
         "before invoking the add_expense tool."
     ),
     lifespan=lifespan,
+    host="0.0.0.0",
+    port=port,
+    streamable_http_path="/sse",
+    auth_server_provider=oauth_provider,
+    auth=AuthSettings(
+        issuer_url=AnyHttpUrl(public_url),
+        resource_server_url=AnyHttpUrl(public_url),
+        client_registration_options=ClientRegistrationOptions(enabled=True),
+    ),
 )
 
 
@@ -137,78 +142,16 @@ async def categories():
 # ---------------------------------------------------------
 
 @mcp.tool()
-async def google_login(
-    ctx: Context,
-    base_url: str | None = None,
-) -> dict:
-    """
-    Returns the Google Sign-In authentication URL for this session.
-    Instruct the user to visit this URL to log in.
-
-    Args:
-        base_url: Optional host URL override (e.g. 'https://your-app.a.run.app').
-                  Defaults to the server's configured PUBLIC_URL or localhost.
-    """
-    from app.config import GOOGLE_CLIENT_ID
-    if not GOOGLE_CLIENT_ID:
-        return {
-            "status": "error",
-            "message": "Google OAuth is not configured on this server (missing GOOGLE_CLIENT_ID).",
-        }
-
-    host_url = base_url or os.getenv("PUBLIC_URL")
-    if not host_url:
-        request_ctx = getattr(ctx, "request_context", None)
-        if request_ctx is not None:
-            request = getattr(request_ctx, "request", None)
-            if request is not None:
-                host_url = f"{request.url.scheme}://{request.headers.get('host')}"
-    if not host_url:
-        host_url = "http://localhost:8000"
-
-    auth_url = f"{host_url.rstrip('/')}/auth/google?session_id={get_session_id(ctx)}"
-
-    return {
-        "status": "needs_authentication",
-        "auth_url": auth_url,
-        "message": (
-            "To sign in with Google, please open this link in your browser:\n\n"
-            f"{auth_url}\n\n"
-            "Once you complete the sign-in, ask me to check if you are logged in."
-        ),
-    }
-
-
-@mcp.tool()
-async def logout(
-    ctx: Context,
-) -> dict:
-    """
-    Logs out the current user session and clears the session state.
-    """
-    await SessionRepository.delete_session(get_session_id(ctx))
-    return {
-        "status": "ok",
-        "message": "Successfully logged out.",
-    }
-
-
-@mcp.tool()
 async def get_current_user(
     ctx: Context,
 ) -> dict:
     """
-    Returns the currently logged-in user email in this session.
+    Returns the currently logged-in user email.
     """
-    session = await SessionRepository.get_session(get_session_id(ctx))
-    if not session:
-        return {
-            "status": "unauthenticated",
-            "message": "No active session. Please log in first using the google_login tool.",
-        }
+    email = get_authenticated_email(ctx)
     return {
         "status": "ok",
-        "email": session["email"],
+        "email": email,
     }
 
 
@@ -239,13 +182,7 @@ async def add_expense(
         is_borrowed: Set to True if this expense was borrowed by a friend. CRITICAL: If a credit card expense is added and the user has not specified whether it is for self-use or borrowed by a friend, you MUST ask the user in chat for clarification before calling this tool.
         is_settled: Set to True if the borrowed expense was repaid.
     """
-    session = await SessionRepository.get_session(get_session_id(ctx))
-    if not session:
-        return {
-            "status": "unauthenticated",
-            "message": "No active session. Please log in first using the google_login tool.",
-        }
-    active_email = session["email"]
+    active_email = get_authenticated_email(ctx)
 
     expense = ExpenseCreate(
         date=date,
@@ -272,13 +209,7 @@ async def list_expenses(
     """
     List expenses within a date range.
     """
-    session = await SessionRepository.get_session(get_session_id(ctx))
-    if not session:
-        return {
-            "status": "unauthenticated",
-            "message": "No active session. Please log in first using the google_login tool.",
-        }
-    active_email = session["email"]
+    active_email = get_authenticated_email(ctx)
 
     return await ExpenseService.list_expenses(
         active_email,
@@ -312,13 +243,7 @@ async def update_expense(
         is_borrowed: Set to True if this expense was borrowed by a friend. CRITICAL: If a credit card expense is updated and the user has not specified whether it is for self-use or borrowed by a friend, you MUST ask the user in chat for clarification before calling this tool.
         is_settled: Set to True if the borrowed expense was repaid.
     """
-    session = await SessionRepository.get_session(get_session_id(ctx))
-    if not session:
-        return {
-            "status": "unauthenticated",
-            "message": "No active session. Please log in first using the google_login tool.",
-        }
-    active_email = session["email"]
+    active_email = get_authenticated_email(ctx)
 
     expense = ExpenseCreate(
         date=date,
@@ -345,13 +270,7 @@ async def delete_expense(
     """
     Delete an expense.
     """
-    session = await SessionRepository.get_session(get_session_id(ctx))
-    if not session:
-        return {
-            "status": "unauthenticated",
-            "message": "No active session. Please log in first using the google_login tool.",
-        }
-    active_email = session["email"]
+    active_email = get_authenticated_email(ctx)
 
     return await ExpenseService.delete_expense(
         active_email,
@@ -367,13 +286,7 @@ async def recent_expenses(
     """
     Return latest expenses.
     """
-    session = await SessionRepository.get_session(get_session_id(ctx))
-    if not session:
-        return {
-            "status": "unauthenticated",
-            "message": "No active session. Please log in first using the google_login tool.",
-        }
-    active_email = session["email"]
+    active_email = get_authenticated_email(ctx)
 
     return await ExpenseService.recent(
         active_email,
@@ -390,13 +303,7 @@ async def settle_borrowed_expense(
     """
     Mark an outstanding borrowed expense as settled (repaid).
     """
-    session = await SessionRepository.get_session(get_session_id(ctx))
-    if not session:
-        return {
-            "status": "unauthenticated",
-            "message": "No active session. Please log in first using the google_login tool.",
-        }
-    active_email = session["email"]
+    active_email = get_authenticated_email(ctx)
 
     return await ExpenseService.settle_expense(
         active_email,
@@ -418,13 +325,7 @@ async def set_monthly_budget(
     """
     Set monthly budget.
     """
-    session = await SessionRepository.get_session(get_session_id(ctx))
-    if not session:
-        return {
-            "status": "unauthenticated",
-            "message": "No active session. Please log in first using the google_login tool.",
-        }
-    active_email = session["email"]
+    active_email = get_authenticated_email(ctx)
 
     return await FinanceService.set_budget(
         active_email,
@@ -442,13 +343,7 @@ async def set_monthly_credit(
     """
     Set monthly income (salary / net income).
     """
-    session = await SessionRepository.get_session(get_session_id(ctx))
-    if not session:
-        return {
-            "status": "unauthenticated",
-            "message": "No active session. Please log in first using the google_login tool.",
-        }
-    active_email = session["email"]
+    active_email = get_authenticated_email(ctx)
 
     return await FinanceService.set_credit(
         active_email,
@@ -465,13 +360,7 @@ async def get_monthly_finance(
     """
     Get configured budget & income.
     """
-    session = await SessionRepository.get_session(get_session_id(ctx))
-    if not session:
-        return {
-            "status": "unauthenticated",
-            "message": "No active session. Please log in first using the google_login tool.",
-        }
-    active_email = session["email"]
+    active_email = get_authenticated_email(ctx)
 
     return await FinanceService.get_month(
         active_email,
@@ -498,13 +387,7 @@ async def summarize(
     (e.g. today, this week, this month). For queries spanning multiple months
     (e.g. "last 3 months", "May to July"), use the monthly_history tool instead.
     """
-    session = await SessionRepository.get_session(get_session_id(ctx))
-    if not session:
-        return {
-            "status": "unauthenticated",
-            "message": "No active session. Please log in first using the google_login tool.",
-        }
-    active_email = session["email"]
+    active_email = get_authenticated_email(ctx)
 
     return await SummaryService.summarize(
         active_email,
@@ -531,13 +414,7 @@ async def monthly_history(
     Args:
         months: Number of months to look back (default 3).
     """
-    session = await SessionRepository.get_session(get_session_id(ctx))
-    if not session:
-        return {
-            "status": "unauthenticated",
-            "message": "No active session. Please log in first using the google_login tool.",
-        }
-    active_email = session["email"]
+    active_email = get_authenticated_email(ctx)
 
     return await SummaryService.monthly_history(
         active_email,
@@ -605,9 +482,10 @@ async def auth_google(request: Request) -> Response:
 @mcp.custom_route("/callback", methods=["GET"])
 async def oauth_callback(request: Request) -> Response:
     from app.config import GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI
+    from mcp.server.auth.provider import construct_redirect_uri
 
     code = request.query_params.get("code")
-    session_id = request.query_params.get("state")  # state contains session_id
+    session_id = request.query_params.get("state")  # state contains session_id (which is our auth_code)
 
     if not code or not session_id:
         return HTMLResponse(
@@ -615,9 +493,29 @@ async def oauth_callback(request: Request) -> Response:
             status_code=400
         )
 
-    redirect_uri = GOOGLE_REDIRECT_URI or f"{request.url.scheme}://{request.headers.get('host')}/callback"
+    # 1. Fetch parameters from our oauth_auth_codes table to get redirect_uri and state
+    async with get_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT redirect_uri, state
+                FROM oauth_auth_codes
+                WHERE code = %s AND expires_at > NOW() AND used = FALSE
+                """,
+                (session_id,),
+            )
+            row = await cur.fetchone()
+            if not row:
+                return HTMLResponse(
+                    "<h3>Session expired or invalid. Please close this window and try logging in again.</h3>",
+                    status_code=400
+                )
+            redirect_uri = row["redirect_uri"]
+            original_client_state = row["state"]
 
-    # Exchange code for tokens
+    google_redirect_uri = GOOGLE_REDIRECT_URI or f"{request.url.scheme}://{request.headers.get('host')}/callback"
+
+    # Exchange code for tokens with Google
     async with httpx.AsyncClient() as client:
         try:
             token_response = await client.post(
@@ -626,7 +524,7 @@ async def oauth_callback(request: Request) -> Response:
                     "code": code,
                     "client_id": GOOGLE_CLIENT_ID,
                     "client_secret": GOOGLE_CLIENT_SECRET,
-                    "redirect_uri": redirect_uri,
+                    "redirect_uri": google_redirect_uri,
                     "grant_type": "authorization_code",
                 }
             )
@@ -674,25 +572,20 @@ async def oauth_callback(request: Request) -> Response:
 
         normalized_email = email.strip().lower()
 
-        # Associate user in DB
-        user_id = await UserRepository.get_or_create_user(normalized_email)
-        await SessionRepository.set_session(session_id, normalized_email, user_id)
+        # Update the auth code in DB with the user's email, and ensure the user exists
+        await UserRepository.get_or_create_user(normalized_email)
+        async with get_connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "UPDATE oauth_auth_codes SET email = %s WHERE code = %s",
+                    (normalized_email, session_id),
+                )
+            await conn.commit()
 
-        return HTMLResponse(
-            f"""
-            <html>
-                <body style="font-family: sans-serif; text-align: center; padding: 50px; background-color: #f7f9fa;">
-                    <div style="max-width: 500px; margin: auto; padding: 30px; background: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
-                        <h1 style="color: #4CAF50; font-size: 40px; margin-bottom: 10px;">🎉 Success!</h1>
-                        <h2 style="color: #2c3e50; font-weight: normal; margin-top: 0;">Logged in as {normalized_email}</h2>
-                        <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-                        <p style="color: #7f8c8d; line-height: 1.6;">Your session is now authenticated. You can close this tab and go back to your chat assistant.</p>
-                        <button onclick="window.close()" style="background-color: #4CAF50; color: white; border: none; padding: 10px 20px; border-radius: 4px; font-size: 16px; cursor: pointer; margin-top: 10px;">Close Window</button>
-                    </div>
-                </body>
-            </html>
-            """
-        )
+        # Redirect the browser back to the MCP client redirect URI (e.g. Claude / ChatGPT)
+        # Passing the session_id as the authorization code, and the original client state
+        redirect_url = construct_redirect_uri(redirect_uri, code=session_id, state=original_client_state)
+        return RedirectResponse(url=redirect_url)
 
 
 # ---------------------------------------------------------
@@ -700,22 +593,4 @@ async def oauth_callback(request: Request) -> Response:
 # ---------------------------------------------------------
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", "8000"))
-
-    mcp.run(
-        transport="http",
-        path="/sse",
-        host_origin_protection=False,
-        host="0.0.0.0",
-        port=port,
-        middleware=[
-            Middleware(ScopeMiddleware),
-            Middleware(
-                CORSMiddleware,
-                allow_origins=["*"],
-                allow_credentials=False,
-                allow_methods=["*"],
-                allow_headers=["*"],
-            ),
-        ],
-    )
+    mcp.run(transport="streamable-http")
