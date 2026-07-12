@@ -23,6 +23,7 @@ from contextvars import ContextVar
 import uuid
 from starlette.datastructures import QueryParams
 from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
 
 current_scope: ContextVar = ContextVar("current_scope", default=None)
 
@@ -705,5 +706,14 @@ if __name__ == "__main__":
         host_origin_protection=False,
         host="0.0.0.0",
         port=port,
-        middleware=[Middleware(ScopeMiddleware)],
+        middleware=[
+            Middleware(ScopeMiddleware),
+            Middleware(
+                CORSMiddleware,
+                allow_origins=["*"],
+                allow_credentials=True,
+                allow_methods=["*"],
+                allow_headers=["*"],
+            ),
+        ],
     )
