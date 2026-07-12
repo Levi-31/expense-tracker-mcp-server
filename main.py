@@ -32,61 +32,19 @@ class ScopeMiddleware:
 
     async def __call__(self, scope, receive, send):
         current_scope.set(scope)
-        
-        if scope["type"] == "http" and scope["path"] in ("/sse", "/mcp"):
-            # Extract cookies
-            headers = {k.decode("utf-8").lower(): v.decode("utf-8") for k, v in scope.get("headers", [])}
-            cookie_header = headers.get("cookie", "")
-            
-            mcp_session_id = None
-            if "mcp_session_id=" in cookie_header:
-                for cookie in cookie_header.split(";"):
-                    if cookie.strip().startswith("mcp_session_id="):
-                        mcp_session_id = cookie.strip().split("=")[1]
-                        break
-            
-            if mcp_session_id:
-                # Store the cookie session ID in scope
-                scope["_mcp_cookie_session_id"] = mcp_session_id
-            else:
-                # Generate a new session ID and set cookie in response
-                import uuid
-                new_session_id = str(uuid.uuid4())
-                scope["_mcp_generated_session_id"] = new_session_id
-                
-                async def send_wrapper(message):
-                    if message["type"] == "http.response.start":
-                        cookie_val = f"mcp_session_id={new_session_id}; Path=/; Max-Age=31536000; SameSite=None; Secure"
-                        new_headers = list(message.get("headers", []))
-                        new_headers.append((b"set-cookie", cookie_val.encode("utf-8")))
-                        message["headers"] = new_headers
-                    await send(message)
-                
-                await self.app(scope, receive, send_wrapper)
-                return
-                
         await self.app(scope, receive, send)
 
 
 def custom_uuid4() -> uuid.UUID:
     scope = current_scope.get()
     if scope and scope.get("type") == "http":
-        # 1. Check if we have a cookie-based session ID
-        cookie_session_id = scope.get("_mcp_cookie_session_id")
-        if cookie_session_id:
-            try:
-                return uuid.UUID(cookie_session_id)
-            except ValueError:
-                pass
-                
-        # 2. Check if we just generated a session ID for Set-Cookie
-        gen_session_id = scope.get("_mcp_generated_session_id")
-        if gen_session_id:
-            try:
-                return uuid.UUID(gen_session_id)
-            except ValueError:
-                pass
-
+        # Check for client_id query parameter (uniform way to persist sessions for all LLMs)
+        query_string = scope.get("query_string", b"").decode("utf-8")
+        params = QueryParams(query_string)
+        client_id = params.get("client_id")
+        if client_id:
+            # Generate a deterministic UUID based on client_id
+            return uuid.uuid5(uuid.NAMESPACE_DNS, client_id)
     return uuid.uuid4()
 
 import mcp.server.sse
@@ -191,7 +149,16 @@ async def google_login(
             "message": "Google OAuth is not configured on this server (missing GOOGLE_CLIENT_ID).",
         }
 
-    host_url = base_url or os.getenv("PUBLIC_URL") or "http://localhost:8000"
+    host_url = base_url or os.getenv("PUBLIC_URL")
+    if not host_url:
+        request_ctx = getattr(ctx, "request_context", None)
+        if request_ctx is not None:
+            request = getattr(request_ctx, "request", None)
+            if request is not None:
+                host_url = f"{request.url.scheme}://{request.headers.get('host')}"
+    if not host_url:
+        host_url = "http://localhost:8000"
+
     auth_url = f"{host_url.rstrip('/')}/auth/google?session_id={get_session_id(ctx)}"
 
     return {
@@ -729,8 +696,7 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))
 
     mcp.run(
-        transport="http",
-        path="/sse",
+        transport="sse",
         host_origin_protection=False,
         host="0.0.0.0",
         port=port,
