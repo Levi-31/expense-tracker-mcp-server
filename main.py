@@ -563,6 +563,11 @@ async def root_redirect(request: Request) -> Response:
     return RedirectResponse(url="/sse")
 
 
+@mcp.custom_route("/sse", methods=["POST"])
+async def sse_post_handler(request: Request) -> Response:
+    return Response(status_code=202, content="Accepted")
+
+
 @mcp.custom_route("/auth/google", methods=["GET"])
 async def auth_google(request: Request) -> Response:
     from app.config import GOOGLE_CLIENT_ID, GOOGLE_REDIRECT_URI
