@@ -68,6 +68,7 @@ jobs:
           service: ${{ env.SERVICE_NAME }}
           region: ${{ env.REGION }}
           image: ${{ env.GAR_LOCATION }}/${{ env.PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          flags: '--min-instances=1'
 
       - name: Show Service URL
         run: |
