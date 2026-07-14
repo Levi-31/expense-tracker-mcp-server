@@ -163,4 +163,79 @@ async def init_db():
                 """
             )
 
+            # -------------------------------------------------
+            # OAuth: registered clients
+            # -------------------------------------------------
+
+            await cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS oauth_clients(
+
+                    client_id TEXT PRIMARY KEY,
+
+                    client_info JSONB NOT NULL,
+
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+
+                );
+                """
+            )
+
+            # -------------------------------------------------
+            # OAuth: authorization codes
+            # -------------------------------------------------
+
+            await cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS oauth_auth_codes(
+
+                    code TEXT PRIMARY KEY,
+
+                    client_id TEXT NOT NULL,
+
+                    redirect_uri TEXT NOT NULL,
+
+                    code_challenge TEXT NOT NULL,
+
+                    email TEXT,
+
+                    state TEXT,
+
+                    scopes JSONB DEFAULT '[]',
+
+                    expires_at TIMESTAMPTZ NOT NULL,
+
+                    used BOOLEAN DEFAULT FALSE
+
+                );
+                """
+            )
+
+            # -------------------------------------------------
+            # OAuth: access & refresh tokens
+            # -------------------------------------------------
+
+            await cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS oauth_tokens(
+
+                    token TEXT PRIMARY KEY,
+
+                    client_id TEXT NOT NULL,
+
+                    token_type TEXT NOT NULL
+                        CHECK (token_type IN ('access', 'refresh')),
+
+                    email TEXT NOT NULL,
+
+                    scopes JSONB DEFAULT '[]',
+
+                    expires_at TIMESTAMPTZ,
+
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+
+                );
+                """
+            )
+
         await conn.commit()
